@@ -1,0 +1,89 @@
+{
+  "Id": "7cea6b01026c66f34e926964638fb23b00f67075dfaf57b782a6628354dfe299",
+  "Names": [
+    "/modest_jones"
+  ],
+  "Image": "caddy",
+  "ImageID": "sha256:e4bd530ab75a01a5c22fbb097938267e4cde118eab50ae68078df59ce83bceb2",
+  "Command": "caddy run --config /etc/caddy/Caddyfile --adapter caddyfile",
+  "Created": 1765269255,
+  "Ports": [
+    {
+      "IP": "0.0.0.0",
+      "PrivatePort": 80,
+      "PublicPort": 8880,
+      "Type": "tcp"
+    },
+    {
+      "IP": "::",
+      "PrivatePort": 80,
+      "PublicPort": 8880,
+      "Type": "tcp"
+    },
+    {
+      "IP": "",
+      "PrivatePort": 2019,
+      "Type": "tcp"
+    },
+    {
+      "IP": "",
+      "PrivatePort": 443,
+      "Type": "tcp"
+    },
+    {
+      "IP": "",
+      "PrivatePort": 443,
+      "Type": "udp"
+    }
+  ],
+  "Labels": {
+    "org.opencontainers.image.description": "a powerful, enterprise-ready, open source web server with automatic HTTPS written in Go",
+    "org.opencontainers.image.documentation": "https://caddyserver.com/docs",
+    "org.opencontainers.image.licenses": "Apache-2.0",
+    "org.opencontainers.image.source": "https://github.com/caddyserver/caddy-docker",
+    "org.opencontainers.image.title": "Caddy",
+    "org.opencontainers.image.url": "https://caddyserver.com",
+    "org.opencontainers.image.vendor": "Light Code Labs",
+    "org.opencontainers.image.version": "v2.10.2"
+  },
+  "State": "running",
+  "Status": "Up 2 hours",
+  "HostConfig": {
+    "NetworkMode": "caddytest"
+  },
+  "Health": {
+    "Status": "none",
+    "FailingStreak": 0
+  },
+  "NetworkSettings": {
+    "Networks": {
+      "caddytest": {
+        "IPAMConfig": null,
+        "Links": null,
+        "Aliases": null,
+        "DriverOpts": null,
+        "GwPriority": 0,
+        "NetworkID": "663f98c8fb0825009abf87ad291633771e27b71d59367fd03d3e85451dd999cf",
+        "EndpointID": "bc8ffc9f505a450a141271cf367fab3b0b524f66553dda72193f1544be3031f0",
+        "Gateway": "172.24.0.1",
+        "IPAddress": "172.24.0.4",
+        "MacAddress": "46:64:53:60:05:91",
+        "IPPrefixLen": 16,
+        "IPv6Gateway": "",
+        "GlobalIPv6Address": "",
+        "GlobalIPv6PrefixLen": 0,
+        "DNSNames": null
+      }
+    }
+  },
+  "Mounts": [
+    {
+      "Type": "bind",
+      "Source": "/home/karma/bootdev/lessons/docker/Caddyfile",
+      "Destination": "/etc/caddy/Caddyfile",
+      "Mode": "",
+      "RW": true,
+      "Propagation": "rprivate"
+    }
+  ]
+}
