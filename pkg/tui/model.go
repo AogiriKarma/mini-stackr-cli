@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/moby/moby/api/types/container"
 	"github.com/aogirikarma/mini-stackr-cli/pkg/docker"
 )
@@ -22,8 +23,9 @@ type model struct {
 	err        error
 
 	// Detail view data
-	inspect *container.InspectResponse
-	stats   *container.StatsResponse
+	inspect  *container.InspectResponse
+	stats    *container.StatsResponse
+	viewport viewport.Model
 }
 
 // Messages

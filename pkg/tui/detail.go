@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
+	//"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/moby/moby/api/types/container"
@@ -20,12 +21,13 @@ func (m model) updateDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.view = viewList
 			m.inspect = nil
 			m.stats = nil
+			return m, nil
 		case key.Matches(msg, keys.Stop):
-			return m, tea.Batch(m.stopContainer, m.fetchContainerDetail)
+			return m, tea.Sequence(m.stopContainer, m.fetchContainerDetail)
 		case key.Matches(msg, keys.Start):
-			return m, tea.Batch(m.startContainer, m.fetchContainerDetail)
+			return m, tea.Sequence(m.startContainer, m.fetchContainerDetail)
 		case key.Matches(msg, keys.Restart):
-			return m, tea.Batch(m.restartContainer, m.fetchContainerDetail)
+			return m, tea.Sequence(m.restartContainer, m.fetchContainerDetail)
 		case key.Matches(msg, keys.Delete):
 			m.view = viewList
 			return m, m.deleteContainer
@@ -35,10 +37,20 @@ func (m model) updateDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case inspectMsg:
 		m.inspect = msg.inspect
 		m.stats = msg.stats
-	case actionDoneMsg:
-		return m, m.fetchContainerDetail
+		// Update viewport content
+		content := m.renderDetailContent()
+		m.viewport.SetContent(content)
+		return m, nil
+	case tea.WindowSizeMsg:
+		m.viewport.Width = msg.Width
+		m.viewport.Height = msg.Height - 4 // leave room for help
+		return m, nil
 	}
-	return m, nil
+
+	// Handle viewport scrolling
+	var cmd tea.Cmd
+	m.viewport, cmd = m.viewport.Update(msg)
+	return m, cmd
 }
 
 func (m model) fetchContainerDetail() tea.Msg {
@@ -52,7 +64,7 @@ func (m model) fetchContainerDetail() tea.Msg {
 		return errMsg(err)
 	}
 
-	stats, _ := m.client.Stats(context.Background(), id) // ignore error, container might be stopped
+	stats, _ := m.client.Stats(context.Background(), id)
 
 	return inspectMsg{inspect: &inspect, stats: stats}
 }
@@ -62,11 +74,32 @@ func (m model) viewDetail() string {
 		return "Loading..."
 	}
 
+	var b strings.Builder
+
+	// Viewport content
+	b.WriteString(m.viewport.View())
+	b.WriteString("\n")
+
+	// Scroll indicator
+	scrollPercent := int(m.viewport.ScrollPercent() * 100)
+	scrollInfo := statusStyle.Render(fmt.Sprintf("  [%d%%]", scrollPercent))
+
+	// Help
+	help := "[↑↓] scroll  [s]top  [r]esume  [R]estart  [d]elete  [f]refresh  [esc]back  [q]uit"
+	b.WriteString(helpStyle.Render(help) + scrollInfo)
+
+	return b.String()
+}
+
+func (m model) renderDetailContent() string {
+	if m.inspect == nil {
+		return ""
+	}
+
 	ins := m.inspect
 	var b strings.Builder
 
 	// Header
-	// Header clean
 	dot := statusDot(string(ins.State.Status))
 	state := strings.ToUpper(string(ins.State.Status))
 	name := strings.TrimPrefix(ins.Name, "/")
@@ -79,48 +112,74 @@ func (m model) viewDetail() string {
 	b.WriteString(statusStyle.Render(strings.Repeat("─", 40)))
 	b.WriteString("\n\n")
 
-	// Calculate box widths
-	halfWidth := (m.width - 6) / 2
-	if halfWidth < 30 {
-		halfWidth = 30
-	}
-	fullWidth := m.width - 4
-	if fullWidth < 60 {
-		fullWidth = 60
+	// Calculer la largeur disponible
+	availableWidth := m.width - 2 // marge
+	if availableWidth < 40 {
+		availableWidth = 40
 	}
 
-	// Row 1: Resources + Network side by side
-	resourcesBox := m.renderResourcesBox(halfWidth)
-	networkBox := m.renderNetworkBox(halfWidth)
-	row1 := lipgloss.JoinHorizontal(lipgloss.Top, resourcesBox, "  ", networkBox)
-	b.WriteString(row1)
-	b.WriteString("\n\n")
+	// Render les boxes pour mesurer leur taille
+	boxWidth := (availableWidth - 3) / 2 // -3 pour le gap
+	if boxWidth < 30 {
+		boxWidth = 30
+	}
 
-	// Container Info
-	b.WriteString(m.renderInfoBox(fullWidth))
-	b.WriteString("\n\n")
+	resourcesBox := m.renderResourcesBox(boxWidth)
+	networkBox := m.renderNetworkBox(boxWidth)
 
-	// Mounts
-	if ins.Mounts != nil && len(ins.Mounts) > 0 {
-		b.WriteString(m.renderMountsBox(fullWidth))
+	// Mesurer la largeur réelle
+	//totalWidth := lipgloss.Width(resourcesBox) + lipgloss.Width(networkBox) + 2
+
+	// Si ça rentre pas, stack vertical
+	if  m.width < 80 {
+		// Vertical layout - full width
+		fullWidth := availableWidth
+		b.WriteString(m.renderResourcesBox(fullWidth))
 		b.WriteString("\n\n")
-	}
-
-	// Environment
-	if ins.Config != nil && len(ins.Config.Env) > 0 {
-		b.WriteString(m.renderEnvBox(fullWidth))
+		b.WriteString(m.renderNetworkBox(fullWidth))
 		b.WriteString("\n\n")
-	}
-
-	// Labels
-	if ins.Config != nil && len(ins.Config.Labels) > 0 {
-		b.WriteString(m.renderLabelsBox(fullWidth))
+		b.WriteString(m.renderInfoBox(fullWidth))
 		b.WriteString("\n\n")
-	}
 
-	// Help
-	help := "[s]top  [r]esume  [R]estart  [d]elete  [f]refresh  [esc]back  [q]uit"
-	b.WriteString(helpStyle.Render(help))
+		if ins.Mounts != nil && len(ins.Mounts) > 0 {
+			b.WriteString(m.renderMountsBox(fullWidth))
+			b.WriteString("\n\n")
+		}
+
+		if ins.Config != nil && len(ins.Config.Env) > 0 {
+			b.WriteString(m.renderEnvBox(fullWidth))
+			b.WriteString("\n\n")
+		}
+
+		if ins.Config != nil && len(ins.Config.Labels) > 0 {
+			b.WriteString(m.renderLabelsBox(fullWidth))
+			b.WriteString("\n\n")
+		}
+	} else {
+		// Horizontal layout
+		row1 := lipgloss.JoinHorizontal(lipgloss.Top, resourcesBox, "  ", networkBox)
+		b.WriteString(row1)
+		b.WriteString("\n\n")
+
+		fullWidth := availableWidth
+		b.WriteString(m.renderInfoBox(fullWidth))
+		b.WriteString("\n\n")
+
+		if ins.Mounts != nil && len(ins.Mounts) > 0 {
+			b.WriteString(m.renderMountsBox(fullWidth))
+			b.WriteString("\n\n")
+		}
+
+		if ins.Config != nil && len(ins.Config.Env) > 0 {
+			b.WriteString(m.renderEnvBox(fullWidth))
+			b.WriteString("\n\n")
+		}
+
+		if ins.Config != nil && len(ins.Config.Labels) > 0 {
+			b.WriteString(m.renderLabelsBox(fullWidth))
+			b.WriteString("\n\n")
+		}
+	}
 
 	return b.String()
 }
@@ -149,18 +208,14 @@ func (m model) renderResourcesBox(width int) string {
 		barWidth = 10
 	}
 
-	// CPU
 	cpuBar := renderProgressBar(cpuPercent, barWidth)
 	content.WriteString(fmt.Sprintf("%s  %s  %5.1f%%\n", labelStyle.Render("CPU"), cpuBar, cpuPercent))
 
-	// Memory
 	memBar := renderProgressBar(memPercent, barWidth)
 	content.WriteString(fmt.Sprintf("%s  %s  %s\n", labelStyle.Render("RAM"), memBar, formatBytes(memUsage)))
 
-	// Memory limit
 	content.WriteString(fmt.Sprintf("%s  %s\n", labelStyle.Render("Limit"), valueStyle.Render(formatBytes(memLimit))))
 
-	// PIDs
 	if m.stats != nil {
 		content.WriteString(fmt.Sprintf("%s  %s", labelStyle.Render("PIDs"), valueStyle.Render(fmt.Sprintf("%d", m.stats.PidsStats.Current))))
 	}
@@ -175,7 +230,6 @@ func (m model) renderNetworkBox(width int) string {
 
 	ins := m.inspect
 
-	// IP & Gateway from first network
 	if ins.NetworkSettings != nil && len(ins.NetworkSettings.Networks) > 0 {
 		for netName, net := range ins.NetworkSettings.Networks {
 			content.WriteString(fmt.Sprintf("%s  %s\n", labelStyle.Render("Network"), valueStyle.Render(netName)))
@@ -185,7 +239,6 @@ func (m model) renderNetworkBox(width int) string {
 		}
 	}
 
-	// Ports
 	if ins.NetworkSettings != nil && len(ins.NetworkSettings.Ports) > 0 {
 		var ports []string
 		for port, bindings := range ins.NetworkSettings.Ports {
@@ -213,13 +266,11 @@ func (m model) renderInfoBox(width int) string {
 	content.WriteString(fmt.Sprintf("%-12s  %s\n", labelStyle.Render("Created"), valueStyle.Render(formatTime(ins.Created))))
 	content.WriteString(fmt.Sprintf("%-12s  %s\n", labelStyle.Render("Started"), valueStyle.Render(ins.State.StartedAt)))
 
-	// Restart policy
 	if ins.HostConfig != nil {
 		restart := fmt.Sprintf("%s (count: %d)", ins.HostConfig.RestartPolicy.Name, ins.RestartCount)
 		content.WriteString(fmt.Sprintf("%-12s  %s\n", labelStyle.Render("Restart"), valueStyle.Render(restart)))
 	}
 
-	// Platform
 	content.WriteString(fmt.Sprintf("%-12s  %s", labelStyle.Render("Platform"), valueStyle.Render(ins.Platform)))
 
 	return boxStyle.Width(width).Render(content.String())
@@ -237,7 +288,7 @@ func (m model) renderMountsBox(width int) string {
 		if !mount.RW {
 			mode = "ro"
 		}
-		line := fmt.Sprintf("%-6s  %s  →  %s  [%s]", mount.Type, src, dst, mode)
+		line := fmt.Sprintf("%-6s  %s  →  %s  [%s]", string(mount.Type), src, dst, mode)
 		content.WriteString(valueStyle.Render(line))
 		content.WriteString("\n")
 	}
@@ -250,12 +301,7 @@ func (m model) renderEnvBox(width int) string {
 	content.WriteString(boxTitleStyle.Render("ENVIRONMENT"))
 	content.WriteString("\n\n")
 
-	maxShow := 10
-	for i, env := range m.inspect.Config.Env {
-		if i >= maxShow {
-			content.WriteString(statusStyle.Render(fmt.Sprintf("... and %d more", len(m.inspect.Config.Env)-maxShow)))
-			break
-		}
+	for _, env := range m.inspect.Config.Env {
 		content.WriteString(valueStyle.Render(truncate(env, width-4)))
 		content.WriteString("\n")
 	}
@@ -268,17 +314,10 @@ func (m model) renderLabelsBox(width int) string {
 	content.WriteString(boxTitleStyle.Render("LABELS"))
 	content.WriteString("\n\n")
 
-	maxShow := 8
-	i := 0
 	for k, v := range m.inspect.Config.Labels {
-		if i >= maxShow {
-			content.WriteString(statusStyle.Render(fmt.Sprintf("... and %d more", len(m.inspect.Config.Labels)-maxShow)))
-			break
-		}
 		line := fmt.Sprintf("%s=%s", k, v)
 		content.WriteString(valueStyle.Render(truncate(line, width-4)))
 		content.WriteString("\n")
-		i++
 	}
 
 	return boxStyle.Width(width).Render(strings.TrimRight(content.String(), "\n"))
